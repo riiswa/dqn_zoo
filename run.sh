@@ -1,76 +1,28 @@
 #!/bin/bash
 
-# Copyright 2019 DeepMind Technologies Limited. All Rights Reserved.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-# ==============================================================================
+# Check if the folder exists
+if [ -d results ]; then
+    # Folder exists, so empty its contents
+    rm -r results/*
+else
+    # Folder does not exist, so create it
+    mkdir -p results
+fi
 
-# This script does the following:
-# 1. Clones the DQN Zoo repository.
-# 2. Builds a Docker image with all necessary dependencies and runs unit tests.
-# 3. Starts a short run of DQN on Pong in a GPU-accelerated container.
-
-# Before running:
-# * Install Docker version 19.03 or later for the --gpus options.
-# * Install NVIDIA Container Toolkit.
-# * Enable sudoless docker.
-# * Verify installation, e.g. with:
-#   `docker run --gpus all --rm nvidia/cuda:11.1.1-base nvidia-smi`.
-
-# To remove all containers run:
-# `docker rm -vf $(docker ps -a -q)`
-
-# To remove all images run:
-# `docker rmi -f $(docker images -a -q)`
-
-set -u -e  # Check for uninitialized variables and exit if any command fails.
-
-WORK_DIR_ROOT=${TMPDIR:-/var/tmp/}
-WORK_DIR=$(mktemp -d "${WORK_DIR_ROOT}dqnzoo_$(date +"%Y%m%d_%H%M%S")_XXXXXX")
-echo "Working directory: $WORK_DIR"
-
-function clean_up() {
-  echo "Removing $WORK_DIR"
-  rm -rf "$WORK_DIR"
-  echo "Removed $WORK_DIR"
-}
-
-# Clean up on exit.
-trap clean_up INT EXIT TERM
-
-echo "Clone DQN Zoo repository"
-git clone https://github.com/deepmind/dqn_zoo.git "$WORK_DIR"
-find "$WORK_DIR"
-
-echo "Remove container if it exists"
-docker rm dqn_zoo_dqn || true
-
-echo "Remove image if it exists"
 docker rmi dqn_zoo:latest || true
 
-echo "Build image with tag 'dqn_zoo:latest' and run tests"
-docker build -t dqn_zoo:latest "$WORK_DIR"
+docker build -t dqn_zoo:latest .
 
-echo "Run DQN on GPU in a container named dqn_zoo_dqn"
-docker run --gpus all --name dqn_zoo_dqn dqn_zoo:latest \
-    -m dqn_zoo.dqn.run_atari \
-    --jax_platform_name=gpu \
-    --environment_name=pong \
-    --replay_capacity=1000 \
-    --target_network_update_period=40 \
-    --num_iterations=10 \
-    --num_train_frames=1000 \
-    --num_eval_frames=500
+agent=skeleton
+ATARI_GAMES=(alien amidar assault asterix asteroids atlantis bank_heist battle_zone beam_rider berzerk bowling boxing breakout centipede chopper_command crazy_climber defender demon_attack double_dunk enduro fishing_derby freeway frostbite gopher gravitar hero ice_hockey jamesbond kangaroo krull kung_fu_master montezuma_revenge ms_pacman name_this_game phoenix pitfall pong private_eye qbert riverraid road_runner robotank seaquest skiing solaris space_invaders star_gunner surround tennis time_pilot tutankham up_n_down venture video_pinball wizard_of_wor yars_revenge zaxxon)
 
-# Note $WORK_DIR will be removed on exit.
-echo "Finished"
+for game in "${ATARI_GAMES[@]}"; do
+  for seed in {1..5}; do
+    docker rm "dqn_zoo_${agent}" || true
+    docker run -v results:/tmp/results --gpus all --name "dqn_zoo_${agent}" dqn_zoo:latest \
+        -m "dqn_zoo.${agent}.run_atari" \
+        --environment_name="${game}" \
+        --seed="${seed}" \
+        --results_csv_path="/tmp/results/${agent}/${game}/${seed}/results.csv"
+  done
+done

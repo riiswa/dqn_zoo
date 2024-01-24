@@ -34,6 +34,10 @@ NetworkFn = Callable[..., Any]
 class QNetworkOutputs(typing.NamedTuple):
   q_values: jnp.ndarray
 
+class SkeletonQNetworkOutputs(typing.NamedTuple):
+  q_values: jnp.ndarray
+  action_probs: jnp.ndarray
+
 
 class IqnInputs(typing.NamedTuple):
   state: jnp.ndarray
@@ -361,3 +365,16 @@ def dqn_atari_network(num_actions: int) -> NetworkFn:
     return QNetworkOutputs(q_values=network(inputs))
 
   return net_fn
+
+
+def skeleton_atari_network(num_actions: int) -> NetworkFn:
+
+  def net_fn(inputs):
+    state_embedding = dqn_torso()(inputs)
+    q_values = dqn_value_head(num_actions)(state_embedding)
+    action_logits = dqn_value_head(num_actions)(jax.lax.stop_gradient(state_embedding))
+    action_probs = jax.nn.softmax(action_logits, axis=-1)
+    return SkeletonQNetworkOutputs(q_values=q_values, action_probs=action_probs)
+
+  return net_fn
+
